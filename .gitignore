@@ -127,3 +127,4 @@ results/*
 
 !data/.gitkeep
 !results/.gitkeep
+/scripts/.env.file
