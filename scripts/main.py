@@ -1,4 +1,6 @@
 import os
+from datetime import datetime
+from time import perf_counter
 
 from dotenv import find_dotenv, load_dotenv
 
@@ -16,11 +18,22 @@ load_dotenv(
 def main():
     _file_name = os.environ.get("file_name")
 
-    temp_file = DATA_DIR.joinpath(_file_name)
+    parser = EclipseParser(
+        file_path=DATA_DIR.joinpath(_file_name),
+    )
 
-    EclipseParser(
-        file_path=temp_file,
-    ).parse_file()
+    start = perf_counter()
+    parser.parse_file()
+    end = perf_counter()
+
+    print(f"time = {end - start: .2f} s")
+    print(datetime.now().strftime("%Y_%m_%d_parsing_result.csv"))
+
+    # parser.save_to_csv(
+    #     save_path=RESULTS_DIR.joinpath(
+    #         datetime.now().strftime("%Y_%m_%d_parsing_result.csv")
+    #     ),
+    # )
 
 
 if __name__ == "__main__":
