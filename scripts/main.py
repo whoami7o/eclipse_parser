@@ -1,10 +1,11 @@
 import os
 from datetime import datetime
+from pprint import pprint
 from time import perf_counter
 
 from dotenv import find_dotenv, load_dotenv
 
-from eclipse_parser.common import DATA_DIR
+from eclipse_parser.common import DATA_DIR, RESULTS_DIR
 from eclipse_parser.parser import EclipseParser
 
 load_dotenv(
@@ -15,7 +16,10 @@ load_dotenv(
 )
 
 
-def main():
+def main(
+    show_info: bool = False,
+    print_df: bool = False,
+):
     _file_name = os.environ.get("file_name")
 
     parser = EclipseParser(
@@ -26,15 +30,24 @@ def main():
     parser.parse_file()
     end = perf_counter()
 
-    print(f"time = {end - start: .2f} s")
-    print(datetime.now().strftime("%Y_%m_%d_parsing_result.csv"))
+    if print_df:
+        pprint(parser.frame)
 
-    # parser.save_to_csv(
-    #     save_path=RESULTS_DIR.joinpath(
-    #         datetime.now().strftime("%Y_%m_%d_parsing_result.csv")
-    #     ),
-    # )
+    if show_info:
+        pprint(f"Затраченное время: time = {end - start: .2f} s")
+        pprint(
+            f'Имя файла c результатами: {datetime.now().strftime("%Y_%m_%d_parsing_result.csv")}'
+        )
+
+    parser.save_to_csv(
+        save_path=RESULTS_DIR.joinpath(
+            datetime.now().strftime("%Y_%m_%d_parsing_result.csv")
+        ),
+        index=False,
+    )
 
 
 if __name__ == "__main__":
-    main()
+    main(
+        show_info=True,
+    )

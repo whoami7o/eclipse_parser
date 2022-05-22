@@ -2,7 +2,6 @@ import os
 import re
 from copy import deepcopy
 from pathlib import Path
-from pprint import pprint
 from typing import Callable, Generator, Optional, TextIO, Union
 
 import pandas as pd
@@ -16,6 +15,7 @@ from eclipse_parser.common.defaults import (
 
 
 class EclipseParser:
+    """Класс-парсер .inc файлов из eclipse."""
 
     _comment_pattern: re.Pattern = re.compile(r"--.*(\r\n*|\n)")
     _blank_line_pattern: re.Pattern = re.compile(r"(\r\n*|\n)\s*(\r\n*|\n)")
@@ -28,6 +28,7 @@ class EclipseParser:
     def __init__(
         self,
         file_path: Union[str, Path, os.PathLike],
+        *,
         read_method: Callable[
             [TextIO, Optional[int]], Generator[Optional[int], None, None]
         ] = chunks_reader,
@@ -59,14 +60,17 @@ class EclipseParser:
 
     @property
     def file_path(self) -> Path:
+        """Путь к файлу."""
         return self._file_path
 
     @property
     def encoding(self) -> str:
+        """Кодировка читаемого файла."""
         return self._file_encoding
 
     @property
     def frame(self) -> pd.DataFrame:
+        """Датафрейм из распарсенных данных."""
         return self._frame
 
     def parse_file(
@@ -80,11 +84,11 @@ class EclipseParser:
             encoding=self._file_encoding,
         ) as file:
 
+            _block: list[str] = []
             for data in self._read_file(file, self._chunks_size):
 
                 i: int = 0
                 blocks: list[list[str]] = []
-                _block: list[str] = []
 
                 lines = self._clear_raw_string(data)
 
@@ -104,8 +108,6 @@ class EclipseParser:
                         self.append(processed_block)
                         _block.clear()
 
-        pprint(self._frame)
-
     def _clear_raw_string(
         self,
         eclipse_raw_string: str,
@@ -123,75 +125,109 @@ class EclipseParser:
 
         return with_defaults_lines
 
+    def append(self, info_dict: dict[str, list[str]]):
+        date = info_dict["DATES"][-1] if info_dict["DATES"] else None
+        _other_keys = list(info_dict.keys())
+        _other_keys.remove("DATES")
+
+        empty_date: bool = True
+
+        for key in _other_keys:
+
+            if compdates := info_dict[key]:
+
+                empty_date: bool = False
+
+                for compdata in compdates:
+
+                    _compdata: list[str] = compdata.split()
+
+                    i: int = 0
+                    data: dict = {}
+
+                    for column_name in COLUMN_NAMES:
+
+                        if column_name == "Date":
+                            data.update({column_name: date})
+
+                        elif column_name == "Local grid name" and key == "COMPDATL":
+                            data.update({column_name: _compdata[i]})
+                            i += 1
+
+                        else:
+                            if column_name == "Local grid name" and key != "COMPDATL":
+                                data.update({column_name: None})
+                                continue
+
+                            data.update(
+                                {column_name: self._convert_to_float(_compdata[i])}
+                            )
+                            i += 1
+
+                    self._frame = pd.concat(
+                        [self._frame, pd.DataFrame(data, index=[len(self._frame)])]
+                    )
+
+        if empty_date:
+            data = {column_name: None for column_name in COLUMN_NAMES}
+
+            data.update({"Date": date})
+
+            self._frame = pd.concat(
+                [self._frame, pd.DataFrame(data, index=[len(self._frame)])]
+            )
+
+    def save_to_csv(
+        self,
+        save_path: Union[str, Path, os.PathLike],
+        **kwargs,
+    ) -> None:
+        self._frame.to_csv(
+            path_or_buf=save_path,
+            **kwargs,
+        )
+
     @staticmethod
     def _process_key_word_block(
         block: list[str],
-    ) -> dict[str, list[str]]:
-        dates_info: list[str] = []
-        compdata_info: list[str] = []
-        compdatal_info: list[str] = []
-
-        i: int = 0
-        _dates = False
-        _compdata: bool = False
-        _compdatal: bool = False
-        while True:
-            if re.fullmatch("DATES", block[i]):
-                _dates = True
-                _compdata: bool = False
-                _compdatal: bool = False
-            elif re.fullmatch("COMPDAT", block[i]):
-                _compdata = True
-                _dates: bool = False
-                _compdatal: bool = False
-            elif re.fullmatch("COMPDATL", block[i]):
-                _compdatal = True
-                _dates: bool = False
-                _compdata: bool = False
-
-            if _dates:
-                dates_info.append(block[i])
-            elif _compdata:
-                compdata_info.append(block[i])
-            elif _compdatal:
-                compdatal_info.append(block[i])
-
-            i += 1
-
-            if i >= len(block):
-                break
-
-        if "DATES" in dates_info:
-            dates_info = list(
-                filter(
-                    lambda x: not re.fullmatch("DATES", x),
-                    dates_info,
-                )
-            )
-
-        if "COMPDAT" in compdata_info:
-            compdata_info = list(
-                filter(
-                    lambda x: not re.fullmatch("COMPDAT", x),
-                    compdata_info,
-                )
-            )
-
-        if "COMPDATL" in compdatal_info:
-            compdatal_info = list(
-                filter(
-                    lambda x: not re.fullmatch("COMPDATL", x),
-                    compdatal_info,
-                )
-            )
-
-        info_dict: dict[str, list[str]] = {
-            "DATES": dates_info,
-            "COMPDAT": compdata_info,
-            "COMPDATL": compdatal_info,
+    ) -> dict[str, list[Optional[str]]]:
+        data_dict: dict[str, list[Optional[str]]] = {
+            key_word: [] for key_word in KEY_WORDS_TO_PARSE if key_word != "END"
+        }
+        _key_word_flags: dict[str, bool] = {
+            key_word: False for key_word in KEY_WORDS_TO_PARSE if key_word != "END"
         }
 
-        return info_dict
+        iter_count: int = 0
+        while True:
+            for key_word in data_dict.keys():
+                if re.fullmatch(key_word, block[iter_count]):
+                    _key_word_flags.update(
+                        {
+                            _key_word: True if _key_word == key_word else False
+                            for _key_word in KEY_WORDS_TO_PARSE
+                        }
+                    )
+                    break
+
+            for key_word, flag in _key_word_flags.items():
+                if flag:
+                    data_dict[key_word].append(block[iter_count])
+                    break
+
+            iter_count += 1
+            if iter_count >= len(block):
+                break
+
+        for key_word in data_dict.keys():
+            data_dict[key_word] = list(
+                filter(
+                    lambda x: not re.fullmatch(key_word, x),
+                    data_dict[key_word],
+                )
+            )
+
+        return data_dict
 
     @classmethod
     def clear_comments(cls, eclipse_string: str) -> str:
@@ -229,7 +265,7 @@ class EclipseParser:
 
         unknown_blocks = _linesep.sub("", unknown_blocks)
 
-        return eclipse_string.replace(unknown_blocks, "")
+        return eclipse_string.replace(unknown_blocks, " ")
 
     @staticmethod
     def _empty_string(any_str: str) -> bool:
@@ -259,45 +295,3 @@ class EclipseParser:
             return float(any_str)
         except ValueError:
             return any_str
-
-    def append(self, info_dict: dict[str, list[str]]):
-        date = info_dict["DATES"][-1] if info_dict["DATES"] else None
-        _other_keys = list(info_dict.keys())
-        _other_keys.remove("DATES")
-
-        for key in _other_keys:
-            if compdates := info_dict[key]:
-                for compdata in compdates:
-                    _compdata: list[str] = compdata.split()
-                    i: int = 0
-                    data: dict = {}
-
-                    for column_name in COLUMN_NAMES:
-                        if column_name == "Date":
-                            data.update({column_name: date})
-                        elif column_name == "Local grid name" and key == "COMPDATL":
-                            data.update({column_name: _compdata[i]})
-                            i += 1
-                        else:
-                            if column_name == "Local grid name" and key != "COMPDATL":
-                                data.update({column_name: None})
-                                continue
-
-                            data.update(
-                                {column_name: self._convert_to_float(_compdata[i])}
-                            )
-                            i += 1
-
-                    self._frame = pd.concat(
-                        [self._frame, pd.DataFrame(data, index=[len(self._frame)])]
-                    )
-
-    def save_to_csv(
-        self,
-        save_path: Union[str, Path, os.PathLike],
-        **kwargs,
-    ) -> None:
-        self._frame.to_csv(
-            path_or_buf=save_path,
-            **kwargs,
-        )
