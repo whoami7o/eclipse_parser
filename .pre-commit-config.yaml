@@ -10,6 +10,7 @@ repos:
       - id: check-added-large-files
       - id: debug-statements
         language_version: python3
+        exclude: "requirements-dev.txt"
 
   # code-formatter
   - repo: https://github.com/psf/black
@@ -17,6 +18,7 @@ repos:
     hooks:
       - id: black
         args: [ --safe ]
+        exclude: "requirements-dev.txt"
 
   # sort imports
   - repo: https://github.com/PyCQA/isort
@@ -27,6 +29,7 @@ repos:
           "--profile",
           "black",
         ]
+        exclude: "requirements-dev.txt"
 
   # linter
   - repo: https://github.com/PyCQA/flake8
@@ -37,3 +40,4 @@ repos:
           '--max-line-length=160',
           '--ignore=E203, W503',
         ]
+        exclude: "requirements-dev.txt"
