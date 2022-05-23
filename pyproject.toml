@@ -1,3 +1,9 @@
 [build-system]
 requires = ["setuptools>=62.1.0", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+addopts = "--cov=eclipse_parser"
+testpaths = [
+    "tests",
+]
